@@ -18,7 +18,7 @@ import (
 
 	"code.sajari.com/docconv/v2"
 	"github.com/pkg/errors"
-	gomail "gopkg.in/mail.v2"
+	gomail "github.com/wneessen/go-mail"
 
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/shared/mlog"
@@ -290,6 +290,10 @@ func sendMailUsingConfigAdvanced(mail mailData, config *SMTPConfig) error {
 
 const SendGridXSMTPAPIHeader = "X-SMTPAPI"
 
+func generateMessageID(hostname string) string {
+	return fmt.Sprintf("<%s-%d@%s>", model.NewRandomString(16), time.Now().Unix(), hostname)
+}
+
 func sendMail(c smtpClient, mail mailData, date time.Time, config *SMTPConfig) error {
 	mlog.Info("sending mail", mlog.String("to", mail.smtpTo))
 
@@ -300,56 +304,57 @@ func sendMail(c smtpClient, mail mailData, date time.Time, config *SMTPConfig) e
 		text = ""
 	}
 
-	headers := map[string][]string{
-		"From":                      {mail.from.String()},
-		"To":                        {mail.mimeTo},
-		"Subject":                   {encodeRFC2047Word(mail.subject)},
-		"Content-Transfer-Encoding": {"8bit"},
-		"Auto-Submitted":            {"auto-generated"},
-		"Precedence":                {"bulk"},
+	m := gomail.NewMsg()
+
+	m.SetAddrHeaderFromMailAddress(gomail.HeaderFrom, &mail.from)
+	if err = m.SetAddrHeader(gomail.HeaderTo, mail.mimeTo); err != nil {
+		return errors.Wrap(err, "failed to set To address")
 	}
+	m.SetGenHeaderPreformatted(gomail.HeaderSubject, encodeRFC2047Word(mail.subject))
+	m.SetGenHeader(gomail.Header("Content-Transfer-Encoding"), "8bit")
+	m.SetGenHeader(gomail.Header("Auto-Submitted"), "auto-generated")
+	m.SetGenHeader(gomail.Header("Precedence"), "bulk")
 
 	if mail.category != "" {
-		sendgridHeader := fmt.Sprintf(`{"category": %q}`, mail.category)
-		headers[SendGridXSMTPAPIHeader] = []string{sendgridHeader}
+		m.SetGenHeader(gomail.Header(SendGridXSMTPAPIHeader), fmt.Sprintf(`{"category": %q}`, mail.category))
 	}
 
 	if mail.replyTo.Address != "" {
-		headers["Reply-To"] = []string{mail.replyTo.String()}
+		m.SetAddrHeaderFromMailAddress(gomail.HeaderReplyTo, &mail.replyTo)
 	}
 
 	if mail.cc != "" {
-		headers["CC"] = []string{mail.cc}
+		if err = m.SetAddrHeader(gomail.HeaderCc, mail.cc); err != nil {
+			return errors.Wrap(err, "failed to set CC address")
+		}
 	}
 
-	if mail.messageID != "" {
-		headers["Message-ID"] = []string{mail.messageID}
-	} else {
-		randomStringLength := 16
-		msgID := fmt.Sprintf("<%s-%d@%s>", model.NewRandomString(randomStringLength), time.Now().Unix(), config.Hostname)
-		headers["Message-ID"] = []string{msgID}
+	msgID := mail.messageID
+	if msgID == "" {
+		msgID = generateMessageID(config.Hostname)
 	}
+	m.SetGenHeaderPreformatted(gomail.HeaderMessageID, msgID)
 
 	if mail.inReplyTo != "" {
-		headers["In-Reply-To"] = []string{mail.inReplyTo}
+		m.SetGenHeaderPreformatted(gomail.HeaderInReplyTo, mail.inReplyTo)
 	}
 
 	if mail.references != "" {
-		headers["References"] = []string{mail.references}
+		m.SetGenHeaderPreformatted(gomail.HeaderReferences, mail.references)
 	}
 
 	for k, v := range mail.mimeHeaders {
-		headers[k] = []string{encodeRFC2047Word(v)}
+		m.SetGenHeaderPreformatted(gomail.Header(k), encodeRFC2047Word(v))
 	}
 
-	m := gomail.NewMessage(gomail.SetCharset("UTF-8"))
-	m.SetHeaders(headers)
-	m.SetDateHeader("Date", date)
-	m.SetBody("text/plain", text)
-	m.AddAlternative("text/html", htmlMessage)
+	m.SetDateWithValue(date)
+	m.SetBodyString(gomail.TypeTextPlain, text)
+	m.AddAlternativeString(gomail.TypeTextHTML, htmlMessage)
 
 	for name, reader := range mail.embeddedFiles {
-		m.EmbedReader(name, reader)
+		if err = m.EmbedReader(name, reader); err != nil {
+			return errors.Wrap(err, fmt.Sprintf("failed to embed file %q", name))
+		}
 	}
 
 	if err = c.Mail(mail.from.Address); err != nil {

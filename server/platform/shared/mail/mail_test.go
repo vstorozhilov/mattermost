@@ -6,6 +6,7 @@ package mail
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/mail"
@@ -302,7 +303,7 @@ func TestSendMailUsingConfigAdvanced(t *testing.T) {
 	require.Contains(t, mail.htmlBody, resultsEmail.Body.Text, "Wrong received message")
 
 	// verify that the To header of the email message is set to the MIME recipient, even though we got it out of the SMTP recipient's email inbox
-	assert.Equal(t, mail.mimeTo, resultsEmail.Header["To"][0])
+	assert.Contains(t, resultsEmail.Header["To"][0], mail.mimeTo)
 
 	// verify that the MIME from address is correct - unfortunately, we can't verify the SMTP from address
 	assert.Equal(t, mail.from.String(), resultsEmail.Header["From"][0])
@@ -366,6 +367,67 @@ func TestAuthMethods(t *testing.T) {
 			assert.True(t, got == test.err, "%d. got error = %q; want %q", i, got, test.err)
 		})
 	}
+}
+
+func TestLoginAuthNext(t *testing.T) {
+	auth := &loginAuth{username: "user", password: "pass", host: "host:25"}
+
+	resp, err := auth.Next([]byte("Username:"), true)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("user"), resp)
+
+	resp, err = auth.Next([]byte("Password:"), true)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("pass"), resp)
+
+	_, err = auth.Next([]byte("Unknown:"), true)
+	require.Error(t, err)
+
+	resp, err = auth.Next(nil, false)
+	require.NoError(t, err)
+	assert.Nil(t, resp)
+}
+
+func TestTestConnection(t *testing.T) {
+	cfg := getConfig()
+	err := TestConnection(cfg)
+	require.NoError(t, err)
+}
+
+func TestSendMailEmptyServer(t *testing.T) {
+	cfg := getConfig()
+	cfg.Server = ""
+	err := sendMailUsingConfigAdvanced(mailData{}, cfg)
+	require.NoError(t, err)
+}
+
+type errReader struct {
+	err     error
+	payload []byte
+}
+
+func (r *errReader) Read(p []byte) (int, error) {
+	if len(r.payload) > 0 {
+		n := copy(p, r.payload)
+		r.payload = r.payload[n:]
+		return n, nil
+	}
+	return 0, r.err
+}
+
+func TestSendMailEmbedReaderError(t *testing.T) {
+	mocm := &mockMailer{}
+	m := mailData{
+		mimeTo: "test@example.com",
+		smtpTo: "test@example.com",
+		from:   mail.Address{Address: "from@example.com"},
+		embeddedFiles: map[string]io.Reader{
+			"attachment.txt": &errReader{payload: []byte("partial data"), err: errors.New("read failure")},
+		},
+	}
+	err := sendMail(mocm, m, time.Now(), getConfig())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "failed to embed file")
 }
 
 type mockMailer struct {
@@ -462,9 +524,36 @@ func TestSendMail(t *testing.T) {
 		},
 	}
 
+	t.Run("adds cc header", func(t *testing.T) {
+		m := mailData{
+			mimeTo: "test@example.com",
+			smtpTo: "test@example.com",
+			from:   mail.Address{Address: "from@example.com"},
+			cc:     "cc@example.com",
+		}
+		err = sendMail(mocm, m, time.Now(), getConfig())
+		require.NoError(t, err)
+		require.Contains(t, string(mocm.data), "\r\nCc: <cc@example.com>\r\n")
+		mocm.data = []byte{}
+	})
+
+	t.Run("adds sendgrid category header", func(t *testing.T) {
+		m := mailData{
+			mimeTo:   "test@example.com",
+			smtpTo:   "test@example.com",
+			from:     mail.Address{Address: "from@example.com"},
+			category: "transactional",
+		}
+		err = sendMail(mocm, m, time.Now(), getConfig())
+		require.NoError(t, err)
+		require.Contains(t, string(mocm.data), SendGridXSMTPAPIHeader)
+		require.Contains(t, string(mocm.data), `"transactional"`)
+		mocm.data = []byte{}
+	})
+
 	for testName, tc := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			mail := mailData{"", "", mail.Address{}, "", tc.replyTo, "", "", nil, nil, tc.messageID, tc.inReplyTo, tc.references, ""}
+			mail := mailData{"test@example.com", "test@example.com", mail.Address{Address: "from@example.com"}, "", tc.replyTo, "", "", nil, nil, tc.messageID, tc.inReplyTo, tc.references, ""}
 			cfg := getConfig()
 			err = sendMail(mocm, mail, time.Now(), cfg)
 			require.NoError(t, err)
