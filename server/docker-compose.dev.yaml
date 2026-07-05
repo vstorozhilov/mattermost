@@ -32,6 +32,7 @@ services:
     volumes:
       - './../:/home/mattermost-server'
     restart: on-failure
+    init: true
     user: ${CURRENT_UID}
     command: ['sh', '-c', 'cd ../webapp && make dist && cd ../server && make run-server']
     ports:

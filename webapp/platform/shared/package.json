@@ -95,7 +95,7 @@
     }
   },
   "scripts": {
-    "build": "parcel build --no-optimize",
+    "build": "parcel build --no-optimize --no-cache",
     "check": "npm run check:eslint && npm run check:stylelint",
     "check:eslint": "eslint ./src eslint.config.mjs --quiet",
     "check:stylelint": "stylelint \"**/*.{css,scss}\"",
