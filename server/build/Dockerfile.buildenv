@@ -7,6 +7,11 @@ RUN apt-get update && apt-get install -y make git apt-transport-https ca-certifi
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 RUN bash -c "source /root/.nvm/nvm.sh && nvm install $NODE_VERSION && nvm use $NODE_VERSION && nvm alias default $NODE_VERSION"
 
+# /root is 700 by default, which blocks non-root container users (e.g. a
+# bind-mounted dev setup running as the host UID) from executing node/npm
+# installed under it.
+RUN chmod o+rx /root && chmod -R o+rX /root/.nvm
+
 # Make node and npm globally available
 ENV PATH="/root/.nvm/versions/node/v$NODE_VERSION/bin:$PATH"
 
