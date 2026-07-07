@@ -4336,7 +4336,6 @@ const AdminDefinition: AdminDefinitionType = {
                 isHidden: it.not(it.all(
                     it.configIsTrue('ConnectedWorkspacesSettings', 'EnableSharedChannels'),
                     it.configIsTrue('ConnectedWorkspacesSettings', 'EnableRemoteClusterService'),
-                    it.licensedForFeature('SharedChannels'),
                 )),
                 schema: {
                     id: 'SecureConnections',

@@ -9,6 +9,7 @@ import {GenericModal} from '@mattermost/components';
 import type {RemoteCluster} from '@mattermost/types/remote_clusters';
 
 import useCopyText, {messages as copymsg} from 'components/common/hooks/useCopyText';
+import ExternalLink from 'components/external_link';
 import LoadingScreen from 'components/loading_screen';
 import SectionNotice from 'components/section_notice';
 import Input from 'components/widgets/inputs/input/input';
@@ -88,6 +89,20 @@ function SecureConnectionCreateInviteModal({
         />
     );
 
+    const learnMore = (
+        <ModalParagraph>
+            <ExternalLink
+                href='https://mattermost.com/pl/connected-workspaces-destination'
+                location='secure_connection_create_invite_modal'
+            >
+                <FormattedMessage
+                    id='admin.secure_connections.create_invite.share.learn_more'
+                    defaultMessage='Learn more about Connected Workspaces'
+                />
+            </ExternalLink>
+        </ModalParagraph>
+    );
+
     const confirmButtonText = done ? formatMessage({
         id: 'admin.secure_connections.create_invite.confirm.done.button',
         defaultMessage: 'Done',
@@ -126,6 +141,7 @@ function SecureConnectionCreateInviteModal({
             ) : (
                 <>
                     {message}
+                    {learnMore}
                     {notice}
                     <ModalFieldset
                         legend={done ? formatMessage({

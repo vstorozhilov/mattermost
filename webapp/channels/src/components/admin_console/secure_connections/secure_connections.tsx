@@ -9,6 +9,7 @@ import {useHistory} from 'react-router-dom';
 import type {ButtonEmphasis} from '@mattermost/shared/components/button';
 import {buttonClassNames} from '@mattermost/shared/components/button';
 
+import ExternalLink from 'components/external_link';
 import LoadingScreen from 'components/loading_screen';
 import * as Menu from 'components/menu';
 import SectionNotice from 'components/section_notice';
@@ -52,6 +53,12 @@ export default function SecureConnections() {
                                 {...msg.title}
                             />
                             <FormattedMessage {...msg.subtitle}/>
+                            <ExternalLink
+                                href='https://mattermost.com/pl/connected-workspaces-destination'
+                                location='secure_connections'
+                            >
+                                <FormattedMessage {...msg.learnMore}/>
+                            </ExternalLink>
                         </hgroup>
                         <AddMenu disabled={disabled}/>
                     </SectionHeader>
@@ -172,6 +179,7 @@ const msg = defineMessages({
     pageTitle: {id: 'admin.sidebar.secureConnections', defaultMessage: 'Connected Workspaces'},
     title: {id: 'admin.secure_connections.title', defaultMessage: 'Connected Workspaces'},
     subtitle: {id: 'admin.secure_connections.subtitle', defaultMessage: 'Connected workspaces with this server'},
+    learnMore: {id: 'admin.secure_connections.learn_more', defaultMessage: 'Learn more about Connected Workspaces'},
     placeholderTitle: {id: 'admin.secure_connections.placeholder.title', defaultMessage: 'Share channels'},
     placeholderSubtitle: {id: 'admin.secure_connections.placeholder.subtitle', defaultMessage: 'Connecting with an external workspace allows you to share channels with them'},
     addConnection: {id: 'admin.secure_connections.menu.add_connection', defaultMessage: 'Add a connection'},
