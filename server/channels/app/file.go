@@ -1509,6 +1509,73 @@ func populateZipfile(w *zip.Writer, fileDatas []model.FileData) error {
 	return nil
 }
 
+// channelAttachmentsZipPageSize is the number of FileInfos fetched per page by
+// WriteZipFileForChannel. Attachments are streamed into the archive one page at a time so
+// that channels with a large number or volume of files don't require holding every
+// attachment's content in memory at once.
+const channelAttachmentsZipPageSize = 200
+
+// WriteZipFileForChannel streams every non-deleted file attachment belonging to channelId
+// into a zip archive written to w. Unlike WriteZipFile, it never buffers the full set of
+// attachments in memory: FileInfos are paged from the store, and each attachment is copied
+// directly from the file backend into the archive before the next page is fetched.
+func (a *App) WriteZipFileForChannel(rctx request.CTX, channelId string, w io.Writer) *model.AppError {
+	zipWriter := zip.NewWriter(w)
+
+	for page := 0; ; page++ {
+		fileInfos, appErr := a.GetFileInfos(rctx, page, channelAttachmentsZipPageSize, &model.GetFileInfosOptions{
+			ChannelIds: []string{channelId},
+			SortBy:     model.FileinfoSortByCreated,
+		})
+		if appErr != nil {
+			_ = zipWriter.Close()
+			return appErr
+		}
+		if len(fileInfos) == 0 {
+			break
+		}
+
+		if appErr := a.writeChannelAttachmentsToZip(zipWriter, fileInfos); appErr != nil {
+			_ = zipWriter.Close()
+			return appErr
+		}
+
+		if len(fileInfos) < channelAttachmentsZipPageSize {
+			break
+		}
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		return model.NewAppError("WriteZipFileForChannel", "app.file.write_zip_file_for_channel.zip_close.app_error", nil, "", http.StatusInternalServerError).Wrap(err)
+	}
+
+	return nil
+}
+
+// writeChannelAttachmentsToZip copies one page of file attachments into the zip archive,
+// reading and writing each file's content directly rather than loading it into a slice.
+func (a *App) writeChannelAttachmentsToZip(zw *zip.Writer, fileInfos []*model.FileInfo) *model.AppError {
+	for _, fi := range fileInfos {
+		reader, appErr := a.FileReader(fi.Path)
+		if appErr != nil {
+			return appErr
+		}
+
+		entry, err := zw.Create(attachmentEntryName(fi))
+		if err != nil {
+			_ = reader.Close()
+			return model.NewAppError("WriteZipFileForChannel", "app.file.write_zip_file_for_channel.zip_create.app_error", nil, "", http.StatusInternalServerError).Wrap(err)
+		}
+
+		if _, err := io.Copy(entry, reader); err != nil {
+			_ = reader.Close()
+			return model.NewAppError("WriteZipFileForChannel", "app.file.write_zip_file_for_channel.zip_copy.app_error", nil, "", http.StatusInternalServerError).Wrap(err)
+		}
+		_ = reader.Close()
+	}
+	return nil
+}
+
 func (a *App) SearchFilesInTeamForUser(rctx request.CTX, terms string, userId string, teamId string, isOrSearch bool, includeDeletedChannels bool, timeZoneOffset int, page, perPage int) (*model.FileInfoList, bool, *model.AppError) {
 	paramsList := model.ParseSearchParams(strings.TrimSpace(terms), timeZoneOffset)
 

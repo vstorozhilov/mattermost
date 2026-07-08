@@ -1,0 +1,46 @@
+services:
+  postgres:
+    container_name: mattermost-dev-postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - "postgres-dev-data:/var/lib/postgresql/data"
+    extends:
+      file: build/docker-compose.common.yml
+      service: postgres
+
+  mattermost:
+    container_name: mattermost-dev-server
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: ./build/Dockerfile.buildenv
+      args:
+        NODE_VERSION: "24.11.1"
+    working_dir: '/home/mattermost-server/server'
+    environment:
+      - "MM_SQLSETTINGS_DRIVERNAME=postgres"
+      - "MM_SQLSETTINGS_DATASOURCE=postgres://mmuser:mostest@postgres/mattermost_test?sslmode=disable&connect_timeout=10"
+      - "MM_NO_DOCKER=true"
+      - "MM_CLUSTERSETTINGS_ENABLE=false"
+      - "RUN_SERVER_IN_BACKGROUND=false"
+      - "HOME=/tmp"
+    networks:
+      - mm-test
+    depends_on:
+      - postgres
+    volumes:
+      - './../:/home/mattermost-server'
+    restart: on-failure
+    init: true
+    user: ${CURRENT_UID}
+    command: ['sh', '-c', 'cd ../webapp && make dist && cd ../server && make run-server']
+    ports:
+      - "8065:8065"
+
+networks:
+  mm-test:
+    driver: bridge
+
+volumes:
+  postgres-dev-data:
